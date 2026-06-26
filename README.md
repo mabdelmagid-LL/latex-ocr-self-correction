@@ -1,6 +1,6 @@
-# Self-Correcting LaTeX OCR via Render-and-Compare & XAI Quality Gates
+# Self-Correcting LaTeX OCR — Render-and-Compare & XAI Quality Gates
 
-> **AML Course Project** — Two approaches to making a LaTeX OCR model self-aware of its own mistakes and automatically correct them without human feedback.
+> **AML Course Project** — Two independent approaches to making a LaTeX OCR model aware of its own mistakes and automatically correct them without human feedback, evaluated on 30,638 formula images.
 
 ---
 
@@ -11,8 +11,8 @@
 | | Approach 1 | Approach 2 |
 |---|---|---|
 | **Name** | Siamese Render-and-Compare | XAI Attribution Quality Gate |
-| **Signal** | External — render prediction, compare images | Internal — attention maps & gradients |
-| **Feedback** | Cosine similarity score between formula images | Attention consistency, diffuseness, Grad-CAM |
+| **Signal type** | External — render prediction, compare images | Internal — attention maps & gradients |
+| **Feedback mechanism** | Cosine similarity between formula images | Attention consistency, diffuseness, Grad-CAM, IG |
 | **Author** | Mohamed Abdelmagid | Ahmed Abdeen |
 
 ---
@@ -32,40 +32,78 @@ Formula Image ──► pix2tex ──► LaTeX Prediction
                     │  Formula Image ◄──► Rendered     │
                     │  cosine_similarity → score       │
                     └────────────────┬────────────────┘
-                             score < τ?
+                             score < τ ?
                             /          \
                           Yes           No
                      Re-decode        Accept
                    (up to N iters)
 ```
 
-### Architecture — v2d (Final)
+### Final Architecture — v2d (Siamese)
 
-![Architecture Diagram](results/figures/siamese_v2d_architecture.png)
+![Siamese Architecture](results/figures/siamese_v2d_architecture.png)
 
-- **Backbone:** Shared pix2tex ViT encoder fine-tuned with **LoRA** (rank=8, ~230K trainable params out of 85M)
-- **Projection MLP:** `Linear(256) → BatchNorm → GELU → Linear(128)`
-- **Similarity:** L2-normalize embeddings → cosine similarity
-- **Loss:** Contrastive hinge loss, margin=1.0
-- **Score:** `sigmoid(cos_sim × 5)` maps similarity to [0,1]
-- **Threshold:** τ=0.5 (architecturally principled: sigmoid(0)=0.5 ↔ orthogonal embeddings)
+| Component | Detail |
+|---|---|
+| Backbone | Shared pix2tex ViT encoder |
+| Fine-tuning | LoRA rank=8, α=16, dropout=0.05 |
+| Trainable params | **230,272** / 13,085,504 total (1.76%) |
+| Projection MLP | `Linear(256) → BatchNorm → GELU → Linear(128)` |
+| Similarity | L2-normalize → cosine similarity |
+| Score | `sigmoid(cos_sim × 5)` → [0, 1] |
+| Loss | Contrastive hinge loss, margin=1.0 |
+| Threshold τ | 0.5 (principled: sigmoid(0)=0.5 ↔ orthogonal embeddings) |
 
 ### Architectures Explored
 
-| Variant | Description | Key Idea |
+| Variant | Description | Val Accuracy | Val Loss |
+|---|---|---|---|
+| **v1** | Flat MLP head on frozen encoder | 59.2% → 76.2% | 0.58 → 0.32 |
+| **v1 + LoRA** | Same head, LoRA encoder fine-tuning | **79.6%** | 0.296 |
+| **v2a** | ResidualHead — skip-connections + BatchNorm | **82.5%** | 0.260 |
+| **v2b** | CrossAttentionComparator — cross-attention over token sequences | 77.6% | 0.290 |
+| **v2c** | ContrastiveNet — InfoNCE/NT-Xent metric learning | — | — |
+| **v2d** ✓ | **True Siamese** — shared encoder + hinge loss | **55.4%*** | 0.287 |
+
+> *v2d accuracy is on a harder evaluation set with hard-negative mutations only (no easy random negatives), making it directly comparable to real-world OCR errors — hence lower but more meaningful than v2a/v2b.
+
+### Training Details (v2d)
+
+| Parameter | Value |
+|---|---|
+| Training images | 12,000 |
+| Validation images | 2,000 |
+| Target training pairs | 20,000 |
+| Target validation pairs | 500 |
+| Epochs | 10 |
+| Batch size | 64 |
+| Hard-negative probability | 0.5 |
+| LoRA rank | 8 |
+
+### Pair-Type Evaluation (v2d)
+
+| Pair Type | Count | Accuracy |
 |---|---|---|
-| **v2a** | ResidualHead | Skip-connections + BatchNorm on fused [f_inp, f_rnd, diff, mul] features |
-| **v2b** | CrossAttentionComparator | Cross-attention over token sequences — attends to spatial disagreement regions |
-| **v2c** | ContrastiveNet (InfoNCE) | Metric learning with InfoNCE/NT-Xent loss on a shared projection space |
-| **v2d** ✓ | **True Siamese Network** | Shared encoder + hinge loss; architecturally cleanest; best results |
+| Type 1 — Positive (exact render) | 250 | **98.8%** |
+| Type 2 — Negative (mutation) | 184 | 3.3% |
+| Type 3 — Negative (nearby bucket) | 34 | 17.6% |
+| Type 4 — Negative (random formula) | 32 | 28.1% |
+| **Overall** | **500** | **53.6%** |
 
-### Training Setup
+> Domain mismatch: the model excels at detecting that correct pairs match (98.8%) but struggles to reject real OCR errors that look visually similar to correct predictions (low Type 2–4 accuracy).
 
-- **Dataset:** im2latex / LaTeX_OCR GD split — 74K train / 6.7K val / 30K test formula images
-- **Hard negatives:** Synthetic LaTeX mutations (symbol swaps, operator flips, bracket errors, subscript/superscript changes)
-- **Hard-negative probability:** 0.5 (curriculum annealing)
-- **Optimizer:** AdamW, fp16, HuggingFace Trainer
-- **Best val accuracy on hard-negative mutations:** **55.4%**
+### Head-Only Ablation Runs
+
+| Run | Epochs | Train rows | Hard-neg prob | Val Accuracy |
+|---|---|---|---|---|
+| smoke (debug crash) | 1 | 800 | 0.4 | 70.3% |
+| identity smoke | 1 | 3,000 | 0.4 | 100.0% |
+| head_main | 2 | 12,000 | 0.4 | 66.5% |
+| head_hardneg_types | 2 | 12,000 | 0.4 | 72.4% |
+| head_hardneg_types_v2 | 2 | 12,000 | 0.4 | 75.5% |
+| head_long_resample | 2 | 12,000 | 0.4 | 76.2% |
+| head_upgrade_main (annealed) | 2 | 12,000 | 0.3→0.6 | 66.2% |
+| lora_main | 2 | 20,000 | 0.65 | **79.6%** |
 
 ---
 
@@ -73,83 +111,105 @@ Formula Image ──► pix2tex ──► LaTeX Prediction
 
 ### How It Works
 
-```
-Formula Image ──► pix2tex ──► LaTeX Prediction
-                                     │
-                         Inspect model's internal signals:
-                         ┌───────────────────────────────┐
-                         │ • Attention Consistency        │
-                         │   (cross-attention focus on    │
-                         │    formula regions?)           │
-                         │ • Attention Diffuseness        │
-                         │   (spread = uncertain,         │
-                         │    focused = confident)        │
-                         │ • Grad-CAM                     │
-                         │   (gradient-weighted spatial   │
-                         │    activation consistency)     │
-                         │ • Integrated Gradients         │
-                         │   (attribution map alignment)  │
-                         └───────────────┬───────────────┘
-                              Exceeds threshold?
-                             /              \
-                           Yes              No
-                      Re-decode           Accept
-```
+![XAI Architecture](results/figures/xai_quality_gate_architecture.png)
+
+Instead of external rendering, the XAI gate inspects the model's **own internal signals** during decoding to decide if the prediction is trustworthy.
 
 ### XAI Signals
 
-| Signal | Description | Threshold |
+| Signal | What it measures | Threshold |
 |---|---|---|
-| **Confidence** | Max softmax probability per token, averaged | > 0.995 |
-| **Diffuseness** | Entropy of attention weights (high = uncertain) | < 0.81 |
-| **Consistency** | Cross-layer attention map correlation | > 0.06 |
-| **Grad-CAM** | Spatial gradient activation vs formula region | — |
-| **Integrated Gradients** | Attribution overlap between layers | — |
+| **Token Confidence** | Mean max-softmax probability per decoded token | > 0.995 |
+| **Attention Diffuseness** | Entropy of cross-attention weights (high = uncertain, model is "looking everywhere") | < 0.81 |
+| **Attention Consistency** | Correlation of cross-attention maps across decoder layers (low = inconsistent) | > 0.06 |
+| **Grad-CAM** | Gradient-weighted spatial activation alignment with formula region | — |
+| **Integrated Gradients** | Attribution map overlap across decoder steps | — |
 
-### Key Result
-- **+0.5% BLEU** improvement over baseline in a single re-decode pass
+### Quality Gate Presets
+
+| Preset | Confidence | Diffuseness | Consistency | Use case |
+|---|---|---|---|---|
+| `balanced` | 0.90 | 0.85 | 0.05 | General |
+| `strict_conf` | 0.995 | 1.0 | 0.0 | Confidence-only filter |
+| `diff_sensitive` | 0.0 | 0.80 | 0.0 | Attention spread detection |
+| `cons_sensitive` | 0.995 | 0.81 | 0.06 | **Best overall** |
+| `lenient` | 0.80 | 0.95 | 0.02 | Low rejection rate |
+
+### XAI Results
+
+| Metric | Baseline | After 1 Re-decode (XAI gate) | Δ |
+|---|---|---|---|
+| BLEU | 0.8119 | 0.8170 | **+0.0051 (+0.5%)** |
+| Exact Match | 0.344 | — | — |
+| CER ↓ | 0.2377 | — | — |
+
+> **Key result:** A single re-decode pass triggered by the XAI quality gate yields **+0.5% BLEU** improvement with zero external model or rendering needed.
 
 ---
 
-## Results — Approach 1
+## Approach 1 — Full Results
 
-![NLP Metrics](results/figures/results_1_nlp_metrics.png)
+![NLP Metrics Comparison](results/figures/results_1_nlp_metrics.png)
 
-### Full Pipeline vs Baseline (τ=0.5, 1 iteration, 30K test images)
+### Pipeline vs Baseline (τ=0.5, 1 iteration, 30,638 test images)
 
-| Metric | Baseline (pix2tex) | Pipeline (v2d) | Δ |
-|---|---|---|---|
-| Exact Match | 0.3440 | 0.3450 | **+0.001** |
-| CER ↓ | 0.2377 | 0.2362 | **−0.0015** |
-| BLEU | 0.8119 | 0.8119 | 0.000 |
-| ChrF | 0.6337 | 0.6337 | 0.000 |
-| ROUGE-1 | 0.8752 | 0.8757 | +0.0005 |
-| ROUGE-2 | 0.8024 | 0.8029 | +0.0005 |
-| ROUGE-L | 0.8734 | 0.8739 | +0.0005 |
+| Metric | Baseline (pix2tex) | v2d Live Pipeline | v2d Pre-gen Pipeline | Δ (live) |
+|---|---|---|---|---|
+| Exact Match | 0.3440 | 0.3450 | 0.3280 | **+0.001** |
+| CER ↓ | 0.2377 | 0.2369 | 0.2997 | **−0.0008** |
+| WER ↓ | 0.2377 | 0.2369 | 0.2997 | **−0.0008** |
+| BLEU | 0.8119 | 0.8119 | 0.8119 | 0.000 |
+| ChrF | 0.6337 | 0.6337 | 0.6337 | 0.000 |
+| TER ↓ | 0.1023 | 0.1023 | 0.1023 | 0.000 |
+| ROUGE-1 | 0.8752 | 0.8757 | 0.8553 | +0.0005 |
+| ROUGE-2 | 0.8024 | 0.8029 | 0.7838 | +0.0005 |
+| ROUGE-L | 0.8734 | 0.8739 | 0.8534 | +0.0005 |
+| METEOR | 0.0047 | 0.0047 | 0.0047 | 0.000 |
 
 ### Comparator Accuracy
 
 ![Comparator Accuracy](results/figures/results_2_comparator_accuracy.png)
 
-- **55.4% accuracy** on hard-negative synthetic mutations vs 50% random chance
-- Pearson r = 0.077 between comparator score and OCR correctness
-- Finding: comparator detects synthetic mutations well but shows domain mismatch with real OCR errors — only ~0.5% of real predictions fall below τ=0.5
+| Metric | Value |
+|---|---|
+| Comparator accuracy (hard-neg mutations) | **55.4%** |
+| Random chance baseline | 50.0% |
+| Pearson r (score ↔ correctness) | **0.077** |
+| % real predictions below τ=0.5 | ~0.5% |
+| Predictions accepted at τ=0.5, iter 1 | **997 / 1000** |
+| Predictions accepted at τ=0.8, iter 1 | **712 / 1000** |
 
 ### Iteration Sweep
-
-| | τ=0.5 (1 iter) | τ=0.5 (5 iters) | τ=0.8 (1 iter) | τ=0.8 (5 iters) |
-|---|---|---|---|---|
-| Exact Match | 0.345 | 0.345 | 0.320 | 0.314 |
-| CER ↓ | 0.2362 | 0.2369 | 0.4813 | 0.6496 |
 
 ![Iteration Sweep EM](results/figures/results_3_iter_sweep_em.png)
 ![Iteration Sweep CER](results/figures/results_4_iter_sweep_cer.png)
 
-**Key finding:** τ=0.5 is stable across iterations. τ=0.8 aggressively rejects valid predictions, causing metric degradation — confirming domain mismatch between training (synthetic) and inference (real OCR errors).
+| τ | Iters | Accepted | Exact Match | CER ↓ | ROUGE-1 | ROUGE-2 | ROUGE-L |
+|---|---|---|---|---|---|---|---|
+| — | baseline | — | 0.344 | 0.2377 | 0.8752 | 0.8024 | 0.8734 |
+| 0.5 | 1 | 997 | **0.345** | **0.2362** | 0.8757 | 0.8029 | 0.8739 |
+| 0.5 | 2 | 998 | 0.345 | 0.2369 | 0.8749 | 0.8020 | 0.8730 |
+| 0.5 | 3 | 998 | 0.345 | 0.2369 | 0.8749 | 0.8020 | 0.8730 |
+| 0.5 | 4 | 998 | 0.345 | 0.2369 | 0.8749 | 0.8020 | 0.8730 |
+| 0.5 | 5 | 998 | 0.345 | 0.2369 | 0.8749 | 0.8020 | 0.8730 |
+| 0.8 | 1 | 712 | 0.320 | 0.4813 | 0.8097 | 0.7390 | 0.8073 |
+| 0.8 | 2 | 724 | 0.317 | 0.5344 | 0.7958 | 0.7248 | 0.7934 |
+| 0.8 | 3 | 737 | 0.312 | 0.5977 | 0.7919 | 0.7219 | 0.7895 |
+| 0.8 | 4 | 738 | 0.312 | 0.6039 | 0.7909 | 0.7211 | 0.7885 |
+| 0.8 | 5 | 732 | 0.314 | 0.6496 | 0.7876 | 0.7167 | 0.7849 |
 
 ### Score Distribution
 
 ![Score Distribution](results/figures/results_5_score_distribution.png)
+
+| | Correct predictions (n=344) | Incorrect predictions (n=656) |
+|---|---|---|
+| Mean score | **0.841** | 0.826 |
+| Std | 0.045 | 0.052 |
+
+### All Results — Combined
+
+![Results Overview](results/figures/siamese_v2d_results.png)
 
 ---
 
@@ -157,33 +217,33 @@ Formula Image ──► pix2tex ──► LaTeX Prediction
 
 ```
 ├── code/
-│   ├── train_comparator_hf.py          # Base comparator training (v1 architectures)
-│   ├── train_comparator_hf_v2.py       # v2a/v2b/v2c/v2d architectures + LoRA
-│   ├── self_correcting_render_compare.py  # Full pipeline: OCR + render + compare loop
-│   ├── generate_comparator_dataset.py  # Pre-render training pairs to disk
-│   ├── evaluate_pix2tex_gd.py          # Baseline pix2tex evaluation (30K images)
-│   ├── evaluate_full_pipeline_test.py  # End-to-end pipeline evaluation
+│   ├── train_comparator_hf.py              # v1 architectures + head-only training
+│   ├── train_comparator_hf_v2.py           # v2a/v2b/v2c/v2d + LoRA
+│   ├── self_correcting_render_compare.py   # Full pipeline: OCR + render + compare loop
+│   ├── generate_comparator_dataset.py      # Pre-render training pairs to disk
+│   ├── evaluate_pix2tex_gd.py              # Baseline pix2tex evaluation (30K images)
+│   ├── evaluate_full_pipeline_test.py      # End-to-end pipeline evaluation
 │   ├── evaluate_pipeline_from_existing.py  # Pipeline eval from saved predictions
-│   ├── compute_consistency_scores.py   # XAI: attention/Grad-CAM/IG scoring
-│   ├── run_full_test_sweeps.py         # XAI: sweep quality gate presets
-│   ├── plot_xai_scores.py              # XAI: visualise score distributions
-│   ├── cli.py                          # Modified pix2tex CLI with XAI hooks
-│   └── pix2tex_xai/                    # XAI module
-│       ├── consistency.py              # Attribution consistency scoring
-│       ├── gradcam.py                  # Grad-CAM implementation
-│       ├── integrated_gradients.py     # Integrated Gradients
-│       ├── trace.py                    # Attention trace utilities
-│       └── viz.py                      # Visualisation helpers
+│   ├── compute_consistency_scores.py       # XAI: attention/Grad-CAM/IG scoring
+│   ├── run_full_test_sweeps.py             # XAI: sweep all quality gate presets
+│   ├── plot_xai_scores.py                  # XAI: visualise score distributions
+│   ├── cli.py                              # Modified pix2tex CLI with XAI hooks
+│   └── pix2tex_xai/
+│       ├── consistency.py                  # Attribution consistency scoring
+│       ├── gradcam.py                      # Grad-CAM implementation
+│       ├── integrated_gradients.py         # Integrated Gradients (Captum)
+│       ├── trace.py                        # Attention trace utilities
+│       └── viz.py                          # Visualisation helpers
 ├── live_demo/
-│   ├── app.py                          # Flask web app
-│   ├── templates/index.html            # UI with MathJax rendering
-│   └── static/style.css               # Dark theme styling
+│   ├── app.py                              # Flask web app
+│   ├── templates/index.html                # UI with MathJax rendering
+│   └── static/style.css                   # Dark theme
 ├── results/
 │   ├── data/
-│   │   ├── full_nlp_metrics.json       # All metrics for all pipeline variants
-│   │   ├── pipeline_metrics_v2d.json   # v2d pipeline detailed results
-│   │   └── pipeline_iter_sweep_metrics.csv  # τ × iterations sweep
-│   └── figures/                        # All result plots + architecture diagram
+│   │   ├── full_nlp_metrics.json           # All metrics for all pipeline variants
+│   │   ├── pipeline_metrics_v2d.json       # v2d pipeline detailed results
+│   │   └── pipeline_iter_sweep_metrics.csv # Full τ × iterations sweep table
+│   └── figures/                            # All plots + architecture diagrams
 └── requirements.txt
 ```
 
@@ -191,11 +251,12 @@ Formula Image ──► pix2tex ──► LaTeX Prediction
 
 ## Live Demo
 
-A Flask web app that lets you upload a formula image and see:
-- **pix2tex** decoded LaTeX rendered via MathJax
+A Flask web app for real-time formula OCR with quality feedback:
+
+- Upload a formula image → pix2tex decodes to LaTeX rendered via **MathJax**
 - **Per-token confidence heatmap** (red = low confidence, green = high)
-- **XAI quality gate** decision (accept / re-decode)
-- **Iterative re-decoding** with confidence heatmap per iteration
+- **XAI quality gate** decision with configurable thresholds
+- **Iterative re-decoding** showing confidence heatmap at each iteration
 
 ```bash
 pip install -r requirements.txt
@@ -205,37 +266,35 @@ python live_demo/app.py
 
 ---
 
-## Installation
+## Installation & Running
 
 ```bash
-# 1. pix2tex OCR backbone
+# 1. pix2tex OCR backbone (downloads weights automatically)
 pip install "pix2tex[gui]"
 
-# 2. PyTorch with CUDA
+# 2. PyTorch with CUDA 11.8
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 
 # 3. All other dependencies
 pip install -r requirements.txt
 
-# 4. NLTK data
+# 4. NLTK data (for METEOR metric)
 python -c "import nltk; nltk.download('wordnet'); nltk.download('omw-1.4')"
 ```
 
-## Running
-
 ```bash
-# Baseline evaluation
+# Evaluate baseline pix2tex (30K test images)
 python code/evaluate_pix2tex_gd.py
 
 # Train Siamese v2d comparator
 python code/train_comparator_hf_v2.py --arch v2d --output-dir results_v2d \
   --hard-negative-prob 0.5 --margin 1.0 --epochs 10 --lora-rank 8 --fp16
 
-# Evaluate full pipeline
+# Evaluate full self-correcting pipeline
 python code/evaluate_pipeline_from_existing.py --arch v2d \
   --comparator-checkpoint <path/to/comparator.pt> --tau 0.5 --max-iters 2
 
-# XAI quality gate sweep
+# Run XAI quality gate sweep (all presets)
 python code/run_full_test_sweeps.py --data-dir data/formulae_extracted_full/test
 ```
 
@@ -243,4 +302,4 @@ python code/run_full_test_sweeps.py --data-dir data/formulae_extracted_full/test
 
 ## Tech Stack
 
-`PyTorch` · `HuggingFace Transformers` · `LoRA / PEFT` · `pix2tex` · `timm` · `Flask` · `Captum` · `sacrebleu` · `ROUGE` · `jiwer` · `matplotlib`
+`PyTorch` · `HuggingFace Transformers` · `LoRA` · `pix2tex` · `timm` · `Flask` · `Captum` · `sacrebleu` · `rouge-score` · `jiwer` · `matplotlib` · `MathJax`
