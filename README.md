@@ -1,7 +1,5 @@
 # Self-Correcting LaTeX OCR — Render-and-Compare & XAI Quality Gates
 
-> **AML Course Project** — Two independent approaches to making a LaTeX OCR model aware of its own mistakes and automatically correct them without human feedback, evaluated on 30,638 formula images.
-
 ---
 
 ## Overview
@@ -144,72 +142,6 @@ Instead of external rendering, the XAI gate inspects the model's **own internal 
 | CER ↓ | 0.2377 | — | — |
 
 > **Key result:** A single re-decode pass triggered by the XAI quality gate yields **+0.5% BLEU** improvement with zero external model or rendering needed.
-
----
-
-## Approach 1 — Full Results
-
-![NLP Metrics Comparison](results/figures/results_1_nlp_metrics.png)
-
-### Pipeline vs Baseline (τ=0.5, 1 iteration, 30,638 test images)
-
-| Metric | Baseline (pix2tex) | v2d Live Pipeline | v2d Pre-gen Pipeline | Δ (live) |
-|---|---|---|---|---|
-| Exact Match | 0.3440 | 0.3450 | 0.3280 | **+0.001** |
-| CER ↓ | 0.2377 | 0.2369 | 0.2997 | **−0.0008** |
-| WER ↓ | 0.2377 | 0.2369 | 0.2997 | **−0.0008** |
-| BLEU | 0.8119 | 0.8119 | 0.8119 | 0.000 |
-| ChrF | 0.6337 | 0.6337 | 0.6337 | 0.000 |
-| TER ↓ | 0.1023 | 0.1023 | 0.1023 | 0.000 |
-| ROUGE-1 | 0.8752 | 0.8757 | 0.8553 | +0.0005 |
-| ROUGE-2 | 0.8024 | 0.8029 | 0.7838 | +0.0005 |
-| ROUGE-L | 0.8734 | 0.8739 | 0.8534 | +0.0005 |
-| METEOR | 0.0047 | 0.0047 | 0.0047 | 0.000 |
-
-### Comparator Accuracy
-
-![Comparator Accuracy](results/figures/results_2_comparator_accuracy.png)
-
-| Metric | Value |
-|---|---|
-| Comparator accuracy (hard-neg mutations) | **55.4%** |
-| Random chance baseline | 50.0% |
-| Pearson r (score ↔ correctness) | **0.077** |
-| % real predictions below τ=0.5 | ~0.5% |
-| Predictions accepted at τ=0.5, iter 1 | **997 / 1000** |
-| Predictions accepted at τ=0.8, iter 1 | **712 / 1000** |
-
-### Iteration Sweep
-
-![Iteration Sweep EM](results/figures/results_3_iter_sweep_em.png)
-![Iteration Sweep CER](results/figures/results_4_iter_sweep_cer.png)
-
-| τ | Iters | Accepted | Exact Match | CER ↓ | ROUGE-1 | ROUGE-2 | ROUGE-L |
-|---|---|---|---|---|---|---|---|
-| — | baseline | — | 0.344 | 0.2377 | 0.8752 | 0.8024 | 0.8734 |
-| 0.5 | 1 | 997 | **0.345** | **0.2362** | 0.8757 | 0.8029 | 0.8739 |
-| 0.5 | 2 | 998 | 0.345 | 0.2369 | 0.8749 | 0.8020 | 0.8730 |
-| 0.5 | 3 | 998 | 0.345 | 0.2369 | 0.8749 | 0.8020 | 0.8730 |
-| 0.5 | 4 | 998 | 0.345 | 0.2369 | 0.8749 | 0.8020 | 0.8730 |
-| 0.5 | 5 | 998 | 0.345 | 0.2369 | 0.8749 | 0.8020 | 0.8730 |
-| 0.8 | 1 | 712 | 0.320 | 0.4813 | 0.8097 | 0.7390 | 0.8073 |
-| 0.8 | 2 | 724 | 0.317 | 0.5344 | 0.7958 | 0.7248 | 0.7934 |
-| 0.8 | 3 | 737 | 0.312 | 0.5977 | 0.7919 | 0.7219 | 0.7895 |
-| 0.8 | 4 | 738 | 0.312 | 0.6039 | 0.7909 | 0.7211 | 0.7885 |
-| 0.8 | 5 | 732 | 0.314 | 0.6496 | 0.7876 | 0.7167 | 0.7849 |
-
-### Score Distribution
-
-![Score Distribution](results/figures/results_5_score_distribution.png)
-
-| | Correct predictions (n=344) | Incorrect predictions (n=656) |
-|---|---|---|
-| Mean score | **0.841** | 0.826 |
-| Std | 0.045 | 0.052 |
-
-### All Results — Combined
-
-![Results Overview](results/figures/siamese_v2d_results.png)
 
 ---
 
