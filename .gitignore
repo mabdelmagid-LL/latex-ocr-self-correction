@@ -1,0 +1,28 @@
+# Model weights
+*.pt
+*.pth
+*.ckpt
+*.bin
+
+# Data
+*.zip
+formulae_extracted_full/
+comparator_dataset/
+gd_data/
+data/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+
+# Logs & outputs
+*.log
+results_*/
+xai_outputs/
+
+# Misc
+.env
+*.mp4

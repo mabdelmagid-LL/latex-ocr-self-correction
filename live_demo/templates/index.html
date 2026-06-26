@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>XAI Quality Gate — LaTeX OCR Demo</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <!-- MathJax for rendering LaTeX -->
+  <script>
+    window.MathJax = {
+      tex: { inlineMath: [['$','$']], displayMath: [['\\[','\\]']] },
+      startup: { typeset: false }
+    };
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+</head>
+<body>
+  <header>
+    <h1>LaTeX OCR</h1>
+    <p class="subtitle">Upload a formula image. The system decodes it with pix2tex, then applies an
+       XAI-based quality gate (attention consistency + diffuseness) to decide whether to re-decode.</p>
+  </header>
+
+  <main>
+    <!-- ── Upload card ── -->
+    <section class="card" id="upload-card">
+      <h2>1. Upload Formula Image</h2>
+
+      <div id="drop-zone">
+        <input type="file" id="file-input" accept="image/*" hidden />
+        <div id="drop-label" onclick="document.getElementById('file-input').click()">
+          <svg width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round"
+              d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/>
+          </svg>
+          <p>Click or drag &amp; drop a formula image (PNG/JPG)</p>
+        </div>
+        <img id="preview-img" alt="preview" style="display:none" />
+      </div>
+
+      <div class="options-row">
+        <label>
+          Max re-decode iterations
+          <input type="number" id="iters-select" value="2" min="0" max="10" step="1" />
+        </label>
+      </div>
+
+      <button id="analyze-btn" disabled>Analyze</button>
+    </section>
+
+    <!-- ── Progress ── -->
+    <div id="progress-bar-wrap" style="display:none">
+      <div id="progress-bar"></div>
+      <p id="progress-label">Processing…</p>
+    </div>
+
+    <!-- ── Steps container ── -->
+    <div id="steps-container"></div>
+
+    <!-- ── Final result ── -->
+    <section id="result-card" class="card" style="display:none">
+      <h2>Final LaTeX Output</h2>
+      <pre id="latex-raw"></pre>
+      <div id="latex-rendered" class="latex-rendered"></div>
+    </section>
+
+    <!-- ── Error card ── -->
+    <section id="error-card" class="card error-card" style="display:none">
+      <h2>Error</h2>
+      <pre id="error-text"></pre>
+    </section>
+  </main>
+
+  <script>
+  const fileInput  = document.getElementById('file-input');
+  const dropZone   = document.getElementById('drop-zone');
+  const previewImg = document.getElementById('preview-img');
+  const analyzeBtn = document.getElementById('analyze-btn');
+  const stepsWrap  = document.getElementById('steps-container');
+  const resultCard = document.getElementById('result-card');
+  const errorCard  = document.getElementById('error-card');
+  const progressWrap = document.getElementById('progress-bar-wrap');
+  const progressBar  = document.getElementById('progress-bar');
+  const progressLbl  = document.getElementById('progress-label');
+
+  let selectedFile = null;
+
+  // ── drag & drop ──────────────────────────────────────────────────────────
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault(); dropZone.classList.remove('drag-over');
+    if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]);
+  });
+  fileInput.addEventListener('change', () => { if (fileInput.files[0]) setFile(fileInput.files[0]); });
+
+  function setFile(f) {
+    selectedFile = f;
+    const url = URL.createObjectURL(f);
+    previewImg.src = url;
+    previewImg.style.display = 'block';
+    document.getElementById('drop-label').style.display = 'none';
+    analyzeBtn.disabled = false;
+  }
+
+  // ── analyze ──────────────────────────────────────────────────────────────
+  analyzeBtn.addEventListener('click', () => {
+    if (!selectedFile) return;
+
+    // reset UI
+    stepsWrap.innerHTML = '';
+    resultCard.style.display = 'none';
+    errorCard.style.display  = 'none';
+    progressWrap.style.display = 'block';
+    progressBar.style.width = '10%';
+    progressLbl.textContent = 'Sending image…';
+    analyzeBtn.disabled = true;
+
+    const fd = new FormData();
+    fd.append('image', selectedFile);
+    fd.append('preset',    'cons_sensitive');
+    fd.append('max_iters', document.getElementById('iters-select').value);
+    fd.append('gradcam',   'false');
+
+    progressBar.style.width = '20%';
+    progressLbl.textContent = 'Running pix2tex + XAI analysis…';
+
+    fetch('/analyze', { method: 'POST', body: fd })
+      .then(r => r.json())
+      .then(data => {
+        progressBar.style.width = '100%';
+        progressLbl.textContent = 'Done!';
+        setTimeout(() => { progressWrap.style.display = 'none'; }, 600);
+
+        if (data.error) {
+          errorCard.style.display = 'block';
+          document.getElementById('error-text').textContent = data.error + '\n\n' + (data.traceback || '');
+          analyzeBtn.disabled = false;
+          return;
+        }
+
+        renderSteps(data.steps);
+
+        // Final result
+        const latex = data.final_latex || '';
+        document.getElementById('latex-raw').textContent = latex;
+        const finalEl = document.getElementById('latex-rendered');
+        finalEl.innerHTML = `\\[${latex}\\]`;
+        resultCard.style.display = 'block';
+        if (window.MathJax) MathJax.typesetPromise([finalEl]);
+
+        analyzeBtn.disabled = false;
+      })
+      .catch(err => {
+        progressWrap.style.display = 'none';
+        errorCard.style.display = 'block';
+        document.getElementById('error-text').textContent = 'Network error: ' + err;
+        analyzeBtn.disabled = false;
+      });
+  });
+
+  // ── render step cards ─────────────────────────────────────────────────────
+  function renderSteps(steps) {
+    steps.forEach((s, i) => {
+      const card = document.createElement('section');
+      card.className = 'card step-card fade-in';
+      card.style.animationDelay = `${i * 0.08}s`;
+
+      let html = `<h2><span class="step-num">${s.step}</span> ${escHtml(s.title)}</h2>`;
+      html += `<div class="step-body">${s.body || ''}</div>`;
+
+      // Scores badges
+      if (s.scores) {
+        html += '<div class="score-badges">';
+        for (const [k, v] of Object.entries(s.scores)) {
+          html += `<span class="badge">${escHtml(k)}: <strong>${v}</strong></span>`;
+        }
+        html += '</div>';
+      }
+
+      // LaTeX preview (step 2) — placeholder replaced after card is in DOM
+      if (s.latex !== undefined) {
+        html += `<div class="mono iter-latex">${escHtml(s.latex)}</div>`;
+        html += `<div class="latex-rendered" id="step-latex-${i}"></div>`;
+      }
+
+      // Token confidence heatmap
+      if (s.token_conf_pairs && s.token_conf_pairs.length) {
+        const thresh = s.conf_threshold || 0.90;
+        html += `<div class="token-conf-label">Token confidence (red = low, green = high):</div>`;
+        html += `<div class="token-conf-row">`;
+        s.token_conf_pairs.forEach(p => {
+          const c = p.conf;
+          // interpolate red→yellow→green
+          let r, g;
+          if (c < 0.5) { r = 255; g = Math.round(c * 2 * 255); }
+          else          { r = Math.round((1 - c) * 2 * 255); g = 255; }
+          const bg = `rgb(${r},${g},30)`;
+          const flagged = c < thresh ? ' flagged' : '';
+          html += `<span class="tok${flagged}" style="background:${bg}" title="${p.token} (${(c*100).toFixed(1)}%)">${escHtml(p.token || '□')}</span>`;
+        });
+        html += `</div>`;
+      }
+
+      // Attention overlays
+      if (s.overlays && s.overlays.length) {
+        html += '<div class="overlays-label">Attention maps (per token):</div>';
+        html += '<div class="overlays">';
+        s.overlays.forEach(ov => {
+          html += `<figure>
+            <img src="data:image/png;base64,${ov.img}" alt="${escHtml(ov.token)}" />
+            <figcaption>${escHtml(ov.token) || `tok_${ov.index}`}</figcaption>
+          </figure>`;
+        });
+        html += '</div>';
+      }
+
+      card.innerHTML = html;
+      stepsWrap.appendChild(card);
+
+      // Render step 2 latex after card is in the DOM
+      if (s.latex !== undefined) {
+        const el = document.getElementById(`step-latex-${i}`);
+        if (el) {
+          el.innerHTML = '\\[' + s.latex + '\\]';
+          if (window.MathJax) MathJax.typesetPromise([el]);
+        }
+      }
+
+      // Render iteration latex blocks as real DOM elements so MathJax works
+      if (s.redecode_steps && s.redecode_steps.length) {
+        s.redecode_steps.forEach(r => {
+          const status = r.passed ? '<span class="pass">✔ Passed</span>' : '<span class="fail">✘ Failed</span>';
+
+          const iterBlock = document.createElement('div');
+          iterBlock.className = 'iter-block';
+
+          const header = document.createElement('div');
+          header.className = 'iter-header';
+          header.innerHTML = `<strong>Iteration ${r.iteration}</strong> — attn_cons: ${r.attn_consistency} &nbsp;|&nbsp; diffuseness: ${r.diffuseness} &nbsp;|&nbsp; ${status}`;
+          iterBlock.appendChild(header);
+
+          const rawLatex = document.createElement('div');
+          rawLatex.className = 'mono iter-latex';
+          rawLatex.textContent = r.latex;
+          iterBlock.appendChild(rawLatex);
+
+          const rendered = document.createElement('div');
+          rendered.className = 'latex-rendered';
+          rendered.innerHTML = '\\[' + r.latex + '\\]';
+          iterBlock.appendChild(rendered);
+
+          if (r.token_conf_pairs && r.token_conf_pairs.length) {
+            const thresh = r.conf_threshold || 0.90;
+            const label = document.createElement('div');
+            label.className = 'token-conf-label';
+            label.textContent = 'Token confidence:';
+            iterBlock.appendChild(label);
+
+            const row = document.createElement('div');
+            row.className = 'token-conf-row';
+            r.token_conf_pairs.forEach(p => {
+              const c = p.conf;
+              let rv, g;
+              if (c < 0.5) { rv = 255; g = Math.round(c * 2 * 255); }
+              else          { rv = Math.round((1 - c) * 2 * 255); g = 255; }
+              const span = document.createElement('span');
+              span.className = 'tok' + (c < thresh ? ' flagged' : '');
+              span.style.background = `rgb(${rv},${g},30)`;
+              span.title = `${p.token} (${(c*100).toFixed(1)}%)`;
+              span.textContent = p.token || '□';
+              row.appendChild(span);
+            });
+            iterBlock.appendChild(row);
+          }
+
+          card.appendChild(iterBlock);
+          if (window.MathJax) MathJax.typesetPromise([rendered]);
+        });
+      }
+    });
+  }
+
+  function escHtml(s) {
+    if (typeof s !== 'string') return '';
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  </script>
+</body>
+</html>

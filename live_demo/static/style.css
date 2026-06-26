@@ -1,0 +1,384 @@
+/* ── reset & base ─────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: #0f1117;
+  color: #e2e8f0;
+  min-height: 100vh;
+  padding-bottom: 4rem;
+}
+
+/* ── header ──────────────────────────────────────────────────────────────── */
+header {
+  background: linear-gradient(135deg, #1a1f2e 0%, #16213e 100%);
+  border-bottom: 1px solid #2d3748;
+  padding: 2rem 2rem 1.6rem;
+  text-align: center;
+}
+
+header h1 {
+  font-size: 1.9rem;
+  font-weight: 700;
+  color: #63b3ed;
+  letter-spacing: -0.5px;
+}
+
+header .subtitle {
+  margin-top: 0.5rem;
+  color: #94a3b8;
+  max-width: 680px;
+  margin-left: auto;
+  margin-right: auto;
+  line-height: 1.55;
+}
+
+header .byline {
+  margin-top: 0.4rem;
+  font-size: 0.82rem;
+  color: #64748b;
+}
+
+/* ── main layout ─────────────────────────────────────────────────────────── */
+main {
+  max-width: 900px;
+  margin: 2rem auto;
+  padding: 0 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.4rem;
+}
+
+/* ── card ────────────────────────────────────────────────────────────────── */
+.card {
+  background: #1a1f2e;
+  border: 1px solid #2d3748;
+  border-radius: 12px;
+  padding: 1.6rem;
+}
+
+.card h2 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #90cdf4;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* ── drop zone ───────────────────────────────────────────────────────────── */
+#drop-zone {
+  border: 2px dashed #2d3748;
+  border-radius: 10px;
+  padding: 2rem;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  margin-bottom: 1.2rem;
+}
+
+#drop-zone:hover, #drop-zone.drag-over {
+  border-color: #63b3ed;
+  background: rgba(99,179,237,0.05);
+}
+
+#drop-label {
+  color: #64748b;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+#drop-label svg { color: #4a5568; }
+
+#preview-img {
+  max-height: 200px;
+  max-width: 100%;
+  border-radius: 6px;
+  border: 1px solid #2d3748;
+}
+
+/* ── options row ─────────────────────────────────────────────────────────── */
+.options-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1.2rem;
+}
+
+.options-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.82rem;
+  color: #94a3b8;
+}
+
+.options-row select,
+.options-row input[type="number"] {
+  background: #0f1117;
+  border: 1px solid #2d3748;
+  border-radius: 6px;
+  color: #e2e8f0;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.9rem;
+  width: 5rem;
+}
+
+.checkbox-label {
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 0.5rem !important;
+}
+
+/* ── analyze button ──────────────────────────────────────────────────────── */
+button#analyze-btn {
+  background: linear-gradient(135deg, #3182ce, #2b6cb0);
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 600;
+  padding: 0.65rem 1.6rem;
+  transition: opacity 0.2s, transform 0.1s;
+}
+
+button#analyze-btn:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); }
+button#analyze-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ── progress bar ────────────────────────────────────────────────────────── */
+#progress-bar-wrap {
+  background: #1a1f2e;
+  border: 1px solid #2d3748;
+  border-radius: 8px;
+  padding: 1rem 1.4rem;
+  text-align: center;
+}
+
+#progress-bar {
+  height: 6px;
+  background: linear-gradient(90deg, #3182ce, #63b3ed);
+  border-radius: 3px;
+  transition: width 0.4s ease;
+  width: 0;
+}
+
+#progress-label {
+  margin-top: 0.5rem;
+  font-size: 0.82rem;
+  color: #64748b;
+}
+
+/* ── step cards ──────────────────────────────────────────────────────────── */
+.step-card { border-left: 3px solid #3182ce; }
+
+.step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  background: #3182ce;
+  border-radius: 50%;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.step-body {
+  color: #cbd5e0;
+  line-height: 1.6;
+  margin-bottom: 0.9rem;
+}
+
+.step-body .pass { color: #68d391; font-weight: 600; }
+.step-body .fail { color: #fc8181; font-weight: 600; }
+.step-body .warn { color: #f6ad55; font-weight: 600; }
+.pass { color: #68d391; font-weight: 600; }
+.fail { color: #fc8181; font-weight: 600; }
+
+/* ── score badges ────────────────────────────────────────────────────────── */
+.score-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.badge {
+  background: #2d3748;
+  border-radius: 5px;
+  font-size: 0.78rem;
+  padding: 0.25rem 0.6rem;
+  color: #90cdf4;
+}
+
+/* ── token confidence heatmap ────────────────────────────────────────────── */
+.token-conf-label {
+  font-size: 0.8rem;
+  color: #64748b;
+  margin: 0.8rem 0 0.4rem;
+}
+
+.token-conf-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-bottom: 0.5rem;
+}
+
+.tok {
+  display: inline-block;
+  padding: 2px 5px;
+  border-radius: 4px;
+  font-family: 'Consolas', 'Fira Code', monospace;
+  font-size: 0.78rem;
+  color: #0f1117;
+  font-weight: 600;
+  cursor: default;
+  transition: transform 0.1s;
+}
+
+.tok:hover { transform: scale(1.15); z-index: 1; position: relative; }
+
+.tok.flagged {
+  outline: 2px solid #fc8181;
+  outline-offset: 1px;
+}
+
+
+/* ── attention overlays ──────────────────────────────────────────────────── */
+.overlays-label {
+  font-size: 0.8rem;
+  color: #64748b;
+  margin-bottom: 0.5rem;
+  margin-top: 0.2rem;
+}
+
+.overlays {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.overlays figure {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.overlays img {
+  height: 70px;
+  border-radius: 5px;
+  border: 1px solid #2d3748;
+  object-fit: contain;
+  background: #0f1117;
+}
+
+.overlays figcaption {
+  font-size: 0.68rem;
+  color: #64748b;
+  max-width: 80px;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── latex display ───────────────────────────────────────────────────────── */
+.latex-inline {
+  background: #0f1117;
+  border-radius: 6px;
+  padding: 0.8rem 1rem;
+  font-size: 1.1rem;
+  overflow-x: auto;
+  color: #e2e8f0;
+  margin-top: 0.5rem;
+}
+
+/* ── re-decode iteration blocks ──────────────────────────────────────────── */
+.iter-block {
+  background: #0f1117;
+  border: 1px solid #2d3748;
+  border-radius: 8px;
+  padding: 0.8rem 1rem;
+  margin-top: 0.8rem;
+}
+
+.iter-header {
+  font-size: 0.85rem;
+  color: #90cdf4;
+  margin-bottom: 0.5rem;
+}
+
+.iter-latex {
+  font-family: 'Consolas', 'Fira Code', monospace;
+  font-size: 0.8rem;
+  color: #a0aec0;
+  margin-bottom: 0.4rem;
+  word-break: break-all;
+}
+
+.latex-img {
+  display: block;
+  max-width: 100%;
+  border-radius: 6px;
+  border: 1px solid #2d3748;
+  margin: 0.4rem 0 0.6rem;
+  background: #0f1117;
+}
+
+/* ── final result ────────────────────────────────────────────────────────── */
+#result-card {
+  border-left: 3px solid #68d391;
+}
+
+#latex-raw {
+  background: #0f1117;
+  border-radius: 6px;
+  padding: 0.8rem 1rem;
+  font-family: 'Consolas', 'Fira Code', monospace;
+  font-size: 0.88rem;
+  color: #a0aec0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin-bottom: 0.8rem;
+}
+
+.latex-rendered {
+  background: #0f1117;
+  border-radius: 6px;
+  padding: 1rem;
+  font-size: 1.3rem;
+  overflow-x: auto;
+  color: #e2e8f0;
+  min-height: 3rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ── error card ──────────────────────────────────────────────────────────── */
+.error-card { border-left: 3px solid #fc8181; }
+#error-text {
+  color: #fc8181;
+  font-family: monospace;
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* ── fade-in animation ───────────────────────────────────────────────────── */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in {
+  animation: fadeIn 0.35s ease both;
+}
